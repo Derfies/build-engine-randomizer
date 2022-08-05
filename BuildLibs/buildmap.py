@@ -1,11 +1,11 @@
 import copy
+import random
+import struct
 from dataclasses import asdict, dataclass, fields
-from struct import *
-from typing import Any
-
-from BuildLibs import *
-from BuildLibs import games
 from pathlib import Path
+from typing import Any, OrderedDict, Union
+
+from BuildLibs import crc32, error, games, info, swapobjkey, trace, warning, FancyPacker
 
 
 class CStat:
@@ -126,17 +126,7 @@ class Sprite(BaseDataClass):
     #     return repr(self.__dict__)
 
 
-def LoadMap(gameName, name, data: bytearray) -> 'MapFile':
-    gameSettings = games.GetGameMapSettings(gameName)
-    # Blood has a signature at the front of map files
-    if data[:4] == b'BLM\x1a':
-        return BloodMap(gameSettings, name, data)
-    else:
-        (version,) = unpack('<i', data[:4])
-        if version <= 6:
-            # https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)#Version_6
-            return MapV6(gameSettings, name, data)
-        return MapFile(gameSettings, name, data)
+
 
 
 class MapFile:
@@ -585,31 +575,31 @@ class MapFile:
 
     def ReadNumSectors(self, start) -> int:
         stop = start + 2
-        (self.num_sectors,) = unpack('<H', self.data[start:stop])
+        (self.num_sectors,) = struct.unpack('<H', self.data[start:stop])
         return stop
 
     def WriteNumSectors(self, start) -> int:
-        new_data = pack('<H', self.num_sectors)
+        new_data = struct.pack('<H', self.num_sectors)
         self.data.extend(new_data)
         return start + len(new_data)
 
     def ReadNumWalls(self, start) -> int:
         stop = start + 2
-        (self.num_walls, ) = unpack('<H', self.data[start:stop])
+        (self.num_walls, ) = struct.unpack('<H', self.data[start:stop])
         return stop
 
     def WriteNumWalls(self, start) -> int:
-        new_data = pack('<H', self.num_walls)
+        new_data = struct.pack('<H', self.num_walls)
         self.data.extend(new_data)
         return start + len(new_data)
 
     def ReadNumSprites(self, start) -> int:
         stop = start + 2
-        (self.num_sprites, ) = unpack('<H', self.data[start:stop])
+        (self.num_sprites, ) = struct.unpack('<H', self.data[start:stop])
         return stop
 
     def WriteNumSprites(self, pos) -> int:
-        new_data = pack('<H', self.num_sprites)
+        new_data = struct.pack('<H', self.num_sprites)
         self.data.extend(new_data)
         return pos + len(new_data)
 
@@ -907,3 +897,16 @@ def MapCrypt(data:bytearray, key:int) -> bytearray:
         data[i] = data[i] ^ (key & 0xff)
         key += 1
     return data
+
+
+def LoadMap(gameName, name, data: bytearray) -> 'MapFile':
+    gameSettings = games.GetGameMapSettings(gameName)
+    # Blood has a signature at the front of map files
+    if data[:4] == b'BLM\x1a':
+        return BloodMap(gameSettings, name, data)
+    else:
+        (version,) = struct.unpack('<i', data[:4])
+        if version <= 6:
+            # https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)#Version_6
+            return MapV6(gameSettings, name, data)
+        return MapFile(gameSettings, name, data)

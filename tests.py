@@ -1,17 +1,19 @@
+import glob
 from typeguard import typechecked, importhook
-profiling=0
+
+import cProfile
+import unittest
+from hashlib import md5
+from mmap import mmap, ACCESS_READ
+from pathlib import Path
+from unittest import case
+
+profiling = 0
 if not profiling:
     importhook.install_import_hook('BuildLibs')
+from BuildLibs import buildmap, crc32, games, trace
+from BuildLibs.grp import CreateGrpFile, GrpBase, LoadGrpFile
 
-import shutil
-from BuildLibs import buildmap, games, confile, gui, SpoilerLog
-from BuildLibs.grp import *
-import cProfile, pstats
-import unittest
-from unittest import SkipTest, case, skip
-from hashlib import md5, sha1
-from mmap import mmap, ACCESS_READ
-import glob
 
 unittest.TestLoader.sortTestMethodsUsing = None
 temp:Path = Path('temp/')
