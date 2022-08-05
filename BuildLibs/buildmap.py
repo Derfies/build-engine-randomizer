@@ -70,6 +70,10 @@ class Sector(BaseDataClass):
     extra: int = DefaultVal(-1)
     length: int = 0
 
+    walls: Union[list, None] = DefaultVal(None)
+    nearbySectors: Union[set, None] = DefaultVal(None)
+    shapes: Union[list, None] = DefaultVal(None)
+
 
 @dataclass
 class Wall(BaseDataClass):
@@ -173,6 +177,11 @@ class MapFile:
         self.CreateSectorPacker()
         self.CreateWallPacker()
         self.CreateSpritePacker()
+
+        assert self.HEADER_LENGTH == self.headerPacker.calcsize()
+        assert self.sector_size == self.sectorPacker.calcsize()
+        assert self.wall_size == self.wallPacker.calcsize()
+        assert self.sprite_size == self.spritePacker.calcsize()
 
         self.sectors = []
         self.walls = []
@@ -296,7 +305,7 @@ class MapFile:
         #swapobjkey(a, b, 'lowtag')# this seems to cause problems with shadow warrior enemies changing types?
 
     def DupeSprite(self, rng: random.Random, sprite:Sprite, spacing: float, possibleReplacements:dict, replacementChance:float, spritetype: str) -> Union[Sprite,None]:
-        sprite = sprite.copy()
+        sprite = copy.deepcopy(sprite)
         if rng.random() < replacementChance:
             replace = rng.choice((*possibleReplacements.keys(), sprite.picnum))
             if replace != sprite.picnum:
@@ -388,7 +397,7 @@ class MapFile:
         }
         del add['choices']
 
-        sprite = Sprite(add)
+        sprite = Sprite(**add)
         self.AppendSprite(sprite)
         spritetype = self.GetSpriteType(sprite)
         self.spoilerlog.AddSprite(spritetype, sprite)
@@ -462,8 +471,7 @@ class MapFile:
         if self.crypt and self.version == 7:
             data = MapCrypt(self.data[pos:pos + self.sprite_size], (self.mapRevision * self.sprite_size) | 0x7474614d)
 
-        sprite = Sprite(**self.spritePacker.unpack(data))
-        sprite.length = self.sprite_size
+        sprite = Sprite(length=self.sprite_size, **self.spritePacker.unpack(data))
         if sprite.extra > 0:
             pos += self.sprite_size
             sprite.extraData = self.data[pos:pos + self.x_sprite_size]
@@ -661,7 +669,8 @@ class MapFile:
         if self.crypt and self.version == 7:
             newdata = bytearray(newdata)
             newdata = MapCrypt(newdata, (self.mapRevision*self.sprite_size) | 0x7474614d)
-
+        elif sprite.extra > 0:
+            newdata = bytearray(newdata)
         if sprite.extra > 0:
             newdata.extend(sprite.extraData)
         self.data.extend(newdata)
@@ -673,7 +682,7 @@ class MapFile:
         return pos
 
     def ReadData(self):
-        pos = self.ReadHeaders()
+        pos: int = self.ReadHeaders()
         pos = self.ReadNumSectors(pos)
         pos = self.ReadSectors(pos)
         pos = self.ReadNumWalls(pos)
@@ -683,7 +692,7 @@ class MapFile:
 
     def WriteData(self):
         self.data = bytearray()
-        pos = self.WriteHeaders()
+        pos: int = self.WriteHeaders()
         pos = self.WriteNumSectors(pos)
         pos = self.WriteSectors(pos)
         pos = self.WriteNumWalls(pos)
@@ -698,20 +707,18 @@ class MapFile:
         assert sector >= 0
         assert sector < len(self.sectors)
 
-        # TODO: Use sector class.
-        wall = self.sectors[sector][0]
-        numwalls = self.sectors[sector][1]
+        wall = self.sectors[sector].wall
+        numwalls = self.sectors[sector].wallnum
 
         walls = {}
         nearbySectors = set()
         shapes = [[]]
         for i in range(numwalls):
-            (x, y, nextwall, otherwall, nextsect) = self.walls[wall]    # TODO: Replace with wall class.
-            nearbySectors.add(nextsect)
-            point = (x, y)
-            walls[wall] = point
-            shapes[-1].append(point)
-            if nextwall in walls:
+            w = self.walls[wall]
+            nearbySectors.add(w.nextsector)
+            walls[wall] = w.pos
+            shapes[-1].append(w.pos)
+            if w.nextwall in walls:
                 shapes.append([])
             wall += 1
 
@@ -735,18 +742,19 @@ class MapFile:
 
 class MapV6(MapFile):
 
-    def ReadHeaders(self, data):
-        super().ReadHeaders(data)
+    def ReadHeaders(self, data) -> int:
+        ret = super().ReadHeaders(data)
 
         # TODO: This is an odd place to override these members, probably because
         # they are set in the super class init, right before the data is read,
         # so there's no better place to set them. Maybe push them up to class
         # members
         self.sector_size = 37
-        self.sprite_size = 43
+        return ret
 
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
+        self.sprite_size = 43
         self.spritePacker = FancyPacker(
             '<',
             OrderedDict(
@@ -797,13 +805,13 @@ class BloodMap(MapFile):
                 songid='i',
                 parallaxtype='c',
                 mapRevision='i',
-                # numSects='H',
-                # num_walls='H',
-                # num_sprites='H',
+                numSects='H',
+                num_walls='H',
+                num_sprites='H',
             )
         )
 
-    def ReadHeaders(self):
+    def ReadHeaders(self) -> int:
         # self.headerPacker = FancyPacker('<', OrderedDict(
         #     sig='4s', version='h', startPos='iii', startAngle='h', startSect='h', pskybits='h', visibility='i',
         #     songid='i', parallaxtype='c', mapRevision='i', numSects='H', num_walls='H', num_sprites='H')
@@ -840,6 +848,7 @@ class BloodMap(MapFile):
         self.sky_start = self.HEADER_LENGTH + self.header2Len
         self.sky_length = (1<<self.pskybits) * 2
         self.sectors_start = self.sky_start + self.sky_length
+        return self.sectors_start
 
     def WriteNumSprites(self, pos):
         header = self.headerPacker.pack(self.__dict__)
@@ -850,7 +859,7 @@ class BloodMap(MapFile):
         return pos
 
     def ReadData(self):
-        pos = self.ReadHeaders()
+        pos: int = self.ReadHeaders()
         pos = self.ReadNumSectors(pos)
         pos = self.ReadNumWalls(pos)
         pos = self.ReadNumSprites(pos)
