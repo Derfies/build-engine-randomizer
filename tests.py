@@ -1,18 +1,19 @@
-import glob
-from typeguard import typechecked, importhook
-
 import cProfile
+import glob
+import os
+import shutil
 import unittest
 from hashlib import md5
 from mmap import mmap, ACCESS_READ
 from pathlib import Path
+from typeguard import typechecked, importhook
 from unittest import case
 
-profiling = 0
+profiling = 1
 if not profiling:
     importhook.install_import_hook('BuildLibs')
-from BuildLibs import buildmap, crc32, games, trace
-from BuildLibs.grp import CreateGrpFile, GrpBase, LoadGrpFile
+from BuildLibs import buildmap, crc32, games, trace, setVerbose
+from BuildLibs.grp import CreateGrpFile, GrpBase, GrpZipFile, LoadGrpFile
 
 
 unittest.TestLoader.sortTestMethodsUsing = None
@@ -256,6 +257,7 @@ class BERandoTestCase(unittest.TestCase):
 
 def runtests():
     unittest.main(verbosity=9, warnings="error", failfast=True)
+
 
 if __name__ == "__main__":
     try:

@@ -1,9 +1,8 @@
 import copy
 import random
 import struct
-from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, OrderedDict, Union
+from typing import OrderedDict, Union
 
 from BuildLibs import crc32, error, games, info, swapobjkey, trace, warning, FancyPacker
 
@@ -18,115 +17,86 @@ class CStat:
         self.invisible = bool(cstat & 0x8000)
 
 
-@dataclass
-class DefaultVal:
+class Sector:
 
-    val: Any
+    def __init__(self, **kwargs):
 
+        self.wall: int = kwargs.get('wall', 0)
+        self.wallnum: int = kwargs.get('wallnum', 0)
+        self.ceilingz: int = kwargs.get('ceilingz', 0)
+        self.floorz: int = kwargs.get('floorz', 0)
+        self.ceilingstat: int = kwargs.get('ceilingstat', 0)
+        self.floorstat: int = kwargs.get('floorstat', 0)
+        self.ceilingpicnum: int = kwargs.get('ceilingpicnum', 0)
+        self.ceilingheinum: int = kwargs.get('ceilingheinum', 0)
+        self.ceilingshade: int = kwargs.get('ceilingshade', 0)
+        self.ceiling_palette: int = kwargs.get('ceiling_palette', 0)
+        self.ceiling_texcoords: list = kwargs.get('ceiling_texcoords', 0)
+        self.floorpicnum: int = kwargs.get('floorpicnum', 0)
+        self.floorheinum: int = kwargs.get('floorheinum', 0)
+        self.floorshade: int = kwargs.get('floorshade', 0)
+        self.floor_palette: int = kwargs.get('floor_palette', 0)
+        self.floor_texcoords: list = kwargs.get('floor_texcoords', [0, 0])
+        self.visibility: int = kwargs.get('visibility', 0)
+        self.filler: int = kwargs.get('filler', 0)
+        self.lowtag: int = kwargs.get('lowtag', 0)
+        self.hightag: int = kwargs.get('hightag', 0)
+        self.extra: int = kwargs.get('extra', -1)
+        self.length: int = kwargs.get('length', 0)
 
-@dataclass
-class BaseDataClass:
-
-    """
-    https://stackoverflow.com/questions/56665298/how-to-apply-default-value-to-python-dataclass-field-when-none-was-passed
-
-    """
-
-    def __post_init__(self):
-        for field in fields(self):
-
-            # if a field of this data class defines a default value of type
-            # `DefaultVal`, then use its value in case the field after
-            # initialization has either not changed or is None.
-            if isinstance(field.default, DefaultVal):
-                field_val = getattr(self, field.name)
-                if isinstance(field_val, DefaultVal) or field_val is None:
-                    setattr(self, field.name, copy.copy(field.default.val))
-
-
-@dataclass
-class Sector(BaseDataClass):
-
-    wall: int = DefaultVal(0)
-    wallnum: int = DefaultVal(0)
-    ceilingz: int = DefaultVal(0)
-    floorz: int = DefaultVal(0)
-    ceilingstat: int = DefaultVal(0)
-    floorstat: int = DefaultVal(0)
-    ceilingpicnum: int = DefaultVal(0)
-    ceilingheinum: int = DefaultVal(0)
-    ceilingshade: int = DefaultVal(0)
-    ceiling_palette: int = DefaultVal(0)
-    ceiling_texcoords: list = DefaultVal([0, 0])
-    floorpicnum: int = DefaultVal(0)
-    floorheinum: int = DefaultVal(0)
-    floorshade: int = DefaultVal(0)
-    floor_palette: int = DefaultVal(0)
-    floor_texcoords: list = DefaultVal([0, 0])
-    visibility: int = DefaultVal(0)
-    filler: int = DefaultVal(0)
-    lowtag: int = DefaultVal(0)
-    hightag: int = DefaultVal(0)
-    extra: int = DefaultVal(-1)
-    length: int = 0
-
-    walls: Union[list, None] = DefaultVal(None)
-    nearbySectors: Union[set, None] = DefaultVal(None)
-    shapes: Union[list, None] = DefaultVal(None)
+        self.walls: Union[list, None] = kwargs.get('walls', None)
+        self.nearbySectors: Union[set, None] = kwargs.get('nearbySectors', None)
+        self.shapes: Union[list, None] = kwargs.get('shapes', None)
 
 
-@dataclass
-class Wall(BaseDataClass):
+class Wall:
 
-    pos: list = DefaultVal([0, 0])
-    point2: int = DefaultVal(0)
-    nextwall: int = DefaultVal(-1)
-    nextsector: int = DefaultVal(-1)
-    cstat: int = DefaultVal(0)
-    picnum: int = DefaultVal(0)
-    overpicnum: int = DefaultVal(0)
-    shade: int = DefaultVal(0)
-    palette: int = DefaultVal(0)
-    texcoords: list = DefaultVal([0, 0, 0, 0])
-    lowtag: int = DefaultVal(0)
-    hightag: int = DefaultVal(0)
-    extra: int = DefaultVal(-1)
-    length: int = 0
-
-
-@dataclass
-class Sprite(BaseDataClass):
-
-    pos: list
-    cstat: int
-    picnum: int
-    shade: int
-    palette: int
-    clipdist: int
-    filler: int
-    texcoords: list
-    sectnum: int
-    statnum: int
-    angle: int
-    owner: int
-    velocity: list
-    lowtag: int
-    hightag: int
-    extra: int
-    length: int
-
-    # def copy(self) -> 'Sprite':
-    #     d = self.__dict__.copy()
-    #     for k in d.keys():
-    #         if type(d[k]) != int:
-    #             d[k] = d[k].copy()
-    #     return Sprite(d)
-    #
-    # def __repr__(self):
-    #     return repr(self.__dict__)
+    def __init__(self, **kwargs):
+        self.pos: list = kwargs.get('pos', [0, 0])
+        self.point2: int = kwargs.get('point2', 0)
+        self.nextwall: int = kwargs.get('nextwall', -1)
+        self.nextsector: int = kwargs.get('nextsector', -1)
+        self.cstat: int = kwargs.get('cstat', 0)
+        self.picnum: int = kwargs.get('picnum', 0)
+        self.overpicnum: int = kwargs.get('overpicnum', 0)
+        self.shade: int = kwargs.get('shade', 0)
+        self.palette: int = kwargs.get('palette', 0)
+        self.texcoords: list = kwargs.get('texcoords', [0, 0, 0, 0])
+        self.lowtag: int = kwargs.get('lowtag', 0)
+        self.hightag: int = kwargs.get('hightag', 0)
+        self.extra: int = kwargs.get('extra', -1)
+        self.length: int = kwargs.get('length', 0)
 
 
+class Sprite:
 
+    def __init__(self, **kwargs):
+        self.pos: list = kwargs.get('pos', [0, 0, 0])
+        self.cstat: int = kwargs.get('cstat', 0)
+        self.picnum: int = kwargs.get('picnum', 0)
+        self.shade: int = kwargs.get('shade', 0)
+        self.palette: int = kwargs.get('palette', 0)
+        self.clipdist: int = kwargs.get('clipdist', 0)
+        self.filler: int = kwargs.get('filler', 0)
+        self.texcoords: list = kwargs.get('texcoords', [0, 0, 0, 0])
+        self.sectnum: int = kwargs.get('sectnum', 0)
+        self.statnum: int = kwargs.get('statnum', 0)
+        self.angle: int = kwargs.get('angle', 0)
+        self.owner: int = kwargs.get('owner', 0)
+        self.velocity: list = kwargs.get('velocity', [0, 0, 0])
+        self.lowtag: int = kwargs.get('lowtag', 0)
+        self.hightag: int = kwargs.get('hightag', 0)
+        self.extra: int = kwargs.get('extra', -1)
+        self.length: int = kwargs.get('length', 0)
+
+    def __copy__(self) -> 'Sprite':
+        cls = self.__class__
+        copied = cls.__new__(cls)
+        copied.__dict__.update(self.__dict__)
+        copied.pos = copied.pos[:]
+        copied.texcoords = copied.texcoords[:]
+        copied.velocity = copied.velocity[:]
+        return copied
 
 
 class MapFile:
@@ -295,7 +265,7 @@ class MapFile:
         #swapobjkey(a, b, 'lowtag')# this seems to cause problems with shadow warrior enemies changing types?
 
     def DupeSprite(self, rng: random.Random, sprite:Sprite, spacing: float, possibleReplacements:dict, replacementChance:float, spritetype: str) -> Union[Sprite,None]:
-        sprite = copy.deepcopy(sprite)
+        sprite = copy.copy(sprite)
         if rng.random() < replacementChance:
             replace = rng.choice((*possibleReplacements.keys(), sprite.picnum))
             if replace != sprite.picnum:
@@ -611,9 +581,7 @@ class MapFile:
         return pos
 
     def WriteSector(self, sector: Sector):
-        sector_dict = asdict(sector)
-        sector_dict.pop('length')
-        newdata = self.sectorPacker.pack(sector_dict)
+        newdata = self.sectorPacker.pack(sector.__dict__)
         if sector.extra > 0:
             newdata += sector.extraData
         self.data.extend(newdata)
@@ -632,9 +600,7 @@ class MapFile:
         return pos
 
     def WriteWall(self, wall: Wall):
-        wall_dict = asdict(wall)
-        wall_dict.pop('length')
-        newdata = self.wallPacker.pack(wall_dict)
+        newdata = self.wallPacker.pack(wall.__dict__)
         if wall.extra > 0:
             newdata += wall.extraData
         self.data.extend(newdata)
