@@ -5,7 +5,7 @@ description = ""
 authors = ["JamieDouugh <jamie.davies@douugh.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.8"
 typeguard = "^2.13.3"
 
 [tool.poetry.dev-dependencies]

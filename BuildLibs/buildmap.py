@@ -1,7 +1,12 @@
+import copy
+from dataclasses import asdict, dataclass, fields
 from struct import *
+from typing import Any
+
 from BuildLibs import *
 from BuildLibs import games
 from pathlib import Path
+
 
 class CStat:
 
@@ -12,46 +17,122 @@ class CStat:
         self.blockingHitscan = bool(cstat & 0x800)
         self.invisible = bool(cstat & 0x8000)
 
-class Sector:
 
-    def __init__(self, **kargs):
-        self.__dict__ = dict(**kargs)
-        self.nearbySectors:set
-        self.walls:list
-        self.shapes:list
+@dataclass
+class DefaultVal:
+
+    val: Any
 
 
-class Sprite:
+@dataclass
+class BaseDataClass:
 
-    def __init__(self, d):
-        self.__dict__ = d
-        self.pos:list
-        self.picnum:int
-        self.sectnum:int
-        self.length:int
+    """
+    https://stackoverflow.com/questions/56665298/how-to-apply-default-value-to-python-dataclass-field-when-none-was-passed
 
-    def copy(self) -> 'Sprite':
-        d = self.__dict__.copy()
-        for k in d.keys():
-            if type(d[k]) != int:
-                d[k] = d[k].copy()
-        return Sprite(d)
+    """
 
-    def __repr__(self):
-        return repr(self.__dict__)
+    def __post_init__(self):
+        for field in fields(self):
+
+            # if a field of this data class defines a default value of type
+            # `DefaultVal`, then use its value in case the field after
+            # initialization has either not changed or is None.
+            if isinstance(field.default, DefaultVal):
+                field_val = getattr(self, field.name)
+                if isinstance(field_val, DefaultVal) or field_val is None:
+                    setattr(self, field.name, copy.copy(field.default.val))
+
+
+@dataclass
+class Sector(BaseDataClass):
+
+    wall: int = DefaultVal(0)
+    wallnum: int = DefaultVal(0)
+    ceilingz: int = DefaultVal(0)
+    floorz: int = DefaultVal(0)
+    ceilingstat: int = DefaultVal(0)
+    floorstat: int = DefaultVal(0)
+    ceilingpicnum: int = DefaultVal(0)
+    ceilingheinum: int = DefaultVal(0)
+    ceilingshade: int = DefaultVal(0)
+    ceiling_palette: int = DefaultVal(0)
+    ceiling_texcoords: list = DefaultVal([0, 0])
+    floorpicnum: int = DefaultVal(0)
+    floorheinum: int = DefaultVal(0)
+    floorshade: int = DefaultVal(0)
+    floor_palette: int = DefaultVal(0)
+    floor_texcoords: list = DefaultVal([0, 0])
+    visibility: int = DefaultVal(0)
+    filler: int = DefaultVal(0)
+    lowtag: int = DefaultVal(0)
+    hightag: int = DefaultVal(0)
+    extra: int = DefaultVal(-1)
+    length: int = 0
+
+
+@dataclass
+class Wall(BaseDataClass):
+
+    pos: list = DefaultVal([0, 0])
+    point2: int = DefaultVal(0)
+    nextwall: int = DefaultVal(-1)
+    nextsector: int = DefaultVal(-1)
+    cstat: int = DefaultVal(0)
+    picnum: int = DefaultVal(0)
+    overpicnum: int = DefaultVal(0)
+    shade: int = DefaultVal(0)
+    palette: int = DefaultVal(0)
+    texcoords: list = DefaultVal([0, 0, 0, 0])
+    lowtag: int = DefaultVal(0)
+    hightag: int = DefaultVal(0)
+    extra: int = DefaultVal(-1)
+    length: int = 0
+
+
+@dataclass
+class Sprite(BaseDataClass):
+
+    pos: list
+    cstat: int
+    picnum: int
+    shade: int
+    palette: int
+    clipdist: int
+    filler: int
+    texcoords: list
+    sectnum: int
+    statnum: int
+    angle: int
+    owner: int
+    velocity: list
+    lowtag: int
+    hightag: int
+    extra: int
+    length: int
+
+    # def copy(self) -> 'Sprite':
+    #     d = self.__dict__.copy()
+    #     for k in d.keys():
+    #         if type(d[k]) != int:
+    #             d[k] = d[k].copy()
+    #     return Sprite(d)
+    #
+    # def __repr__(self):
+    #     return repr(self.__dict__)
 
 
 def LoadMap(gameName, name, data: bytearray) -> 'MapFile':
-    game_settings = games.GetGameMapSettings(gameName)
+    gameSettings = games.GetGameMapSettings(gameName)
     # Blood has a signature at the front of map files
     if data[:4] == b'BLM\x1a':
-        return BloodMap(game_settings, name, data)
+        return BloodMap(gameSettings, name, data)
     else:
         (version,) = unpack('<i', data[:4])
         if version <= 6:
             # https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)#Version_6
-            return MapV6(game_settings, name, data)
-        return MapFile(game_settings, name, data)
+            return MapV6(gameSettings, name, data)
+        return MapFile(gameSettings, name, data)
 
 
 class MapFile:
@@ -61,106 +142,71 @@ class MapFile:
 
     """
 
-    HEADER_LENGTH = 22
+    HEADER_LENGTH = 20
 
-    def __init__(self, game_settings, name, data: bytearray):
-        info('\n', name, len(data))
+    def __init__(self, gameSettings, name, data: bytearray = None):
+        self.gameSettings = gameSettings
         self.name = name
-        self.gameSettings = game_settings
-        self.crypt = 0
+        self.data = data
+        info('\n', name, len(data) if data is not None else None)
 
         self.version = 0
+        self.startPos = [0, 0, 0]
+        self.startAngle = 0
+        self.startSect = 0
+        self.num_sectors = 0
+        self.num_sprites = 0
+        self.num_walls = 0
+
+        self.crypt = 0
+
         self.sector_size = 40
         self.wall_size = 32
         self.sprite_size = 44
+
         self.header2Len = 0
         self.x_sector_size = 0
         self.x_sprite_size = 0
         self.x_wall_size = 0
-        self.sectors_start = self.HEADER_LENGTH
-        self.numSects = 0
-        if data:
-            self.ReadHeaders(data)
 
-        if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
-            warning('unexpected map version', self.version, name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
-
-        trace(self.__dict__, '\n')
-        self.data = data
-
+        self.CreateHeaderPacker()
+        self.CreateSectorPacker()
+        self.CreateWallPacker()
         self.CreateSpritePacker()
 
+        self.sectors = []
+        self.walls = []
         self.items = []
         self.enemies = []
         self.triggers = []
         self.other_sprites = []
-        self.sectors = []
-        self.walls = []
         self.sectorCache = {}
-        if data:
+
+        if data is not None:
             self.ReadData()
+
+    def __str__(self):
+        lines = []
+        lines.append(f'MapFile: {self.name}')
+
+        lines.append(f'    version: {self.version}')
+        lines.append(f'    startPos: {self.startPos}')
+        lines.append(f'    startAngle: {self.startAngle}')
+        lines.append(f'    startSect: {self.startSect}')
+
+        lines.append(f'    num sectors: {self.num_sectors}')
+        lines.append(f'    num walls: {self.num_walls}')
+        lines.append(f'    num sprites: {self.num_sprites}')
+        lines.append(f'    len sectors: {len(self.sectors)}')
+        lines.append(f'    len walls: {len(self.walls)}')
+        lines.append(f'    len sprites: {len(self.sprites)}')
+        lines.append(f'    len data: {len(self.data) if self.data is not None else None}')
+
+        return '\n'.join(lines)
 
     @property
     def sprites(self):
         return self.items + self.enemies + self.triggers + self.other_sprites
-
-    def ReadHeaders(self, data):
-        headerPacker = FancyPacker('<', OrderedDict(version='i', startPos='iii', startAngle='h', startSect='h', numSects='H'))
-        self.__dict__.update(headerPacker.unpack(data[:self.HEADER_LENGTH]))
-
-    def CreateSpritePacker(self):
-        # keep AddSprite up to date with this
-        self.spritePacker = FancyPacker('<', OrderedDict(
-            pos='iii', cstat='h', picnum='h', shade='b', palette='B', clipdist='B',
-            filler='B', texcoords='BBbb', sectnum='h', statnum='h', angle='h',
-            owner='h', velocity='hhh', lowtag='h', hightag='h', extra='h')
-        )
-
-    def ReadData(self):
-        pos = self.ReadSectors()
-        self.num_walls, _ = unpack('<H', self.data[pos:pos + 2])
-        self.walls_start = pos + 2
-        pos = self.ReadWalls()
-        self.num_sprites, _ = unpack('<H', self.data[pos:pos + 2])
-        self.sprites_start = pos + 2
-        self.sprites_end = self.ReadSprites()
-
-    def ReadSectors(self) -> int:
-        pos = self.sectors_start
-        for i in range(self.numSects):
-            # pair of firstwall and numwalls
-            data = self.data[pos:pos + self.sector_size]
-            if self.crypt and self.version == 7:
-                data = MapCrypt(data, self.mapRevision*self.sector_size)
-            sect = unpack('<hh', data[:4])
-            self.sectors.append(sect)
-            pos += self.sector_size
-            (extra,) = unpack('<h', data[-2:])
-            if extra > 0:
-                pos += self.x_sector_size
-        return pos
-
-    def ReadWalls(self) -> int:
-        pos = self.walls_start
-        for i in range(self.num_walls):
-            data = self.data[pos:pos + self.wall_size]
-            if self.crypt and self.version == 7:
-                data = MapCrypt(data, (self.mapRevision*self.sector_size)  | 0x7474614d)
-            wall = unpack('<iihhh', data[:14])
-            self.walls.append(wall)
-            pos += self.wall_size
-            (extra,) = unpack('<h', data[-2:])
-            if extra > 0:
-                pos += self.x_wall_size
-        return pos
-
-    def ReadSprites(self) -> int:
-        pos = self.sprites_start
-        for i in range(self.num_sprites):
-            sprite = self.GetSprite(i, pos)
-            self.AppendSprite(sprite)
-            pos += sprite.length
-        return pos
 
     def Randomize(self, seed:int, settings:dict, spoilerlog):
         try:
@@ -347,13 +393,19 @@ class MapFile:
         spritetype = self.GetSpriteType(sprite)
         self.spoilerlog.AddSprite(spritetype, sprite)
 
-    def AppendSprite(self, sprite:Sprite) -> None:
+    def AppendSector(self, sector: Sector) -> None:
+        self.sectors.append(sector)
+
+    def AppendWall(self, wall: Wall) -> None:
+        self.walls.append(wall)
+
+    def AppendSprite(self, sprite: Sprite) -> None:
         cstat = CStat(sprite.cstat)
         if sprite.picnum in self.gameSettings.swappableItems:
             self.items.append(sprite)
         elif not self.gameSettings.swappableItems and self.IsItem(sprite, cstat):
             self.items.append(sprite)
-        elif sprite.picnum in self.gameSettings.swappableEnemies and cstat.invisible==False:
+        elif sprite.picnum in self.gameSettings.swappableEnemies and not cstat.invisible:
             self.enemies.append(sprite)
         elif sprite.picnum in self.gameSettings.triggers:
             self.triggers.append(sprite)
@@ -373,48 +425,271 @@ class MapFile:
         else:
             return 'other'
 
-    def WriteNumSprites(self):
-        self.data[self.sprites_start - 2], self.data[self.sprites_start - 1] = pack('<H', self.num_sprites)
+    def GetSector(self, pos) -> Sector:
+        data = self.data[pos:pos + self.sector_size]
 
-    def WriteSprites(self):
-        pos = self.sprites_start
-        self.data = self.data[:pos]     # Kill all data up to this point
-        sprites = self.sprites
-        for i in range(len(sprites)):
-            self.WriteSprite(sprites[i], i, pos)
-            pos += sprites[i].length
-
-    def WriteData(self):
-        self.WriteNumSprites()
-        self.WriteSprites()
-
-    def GetSprite(self, id, pos) -> Sprite:
-        assert id >= 0
-        assert pos + self.sprite_size <= len(self.data)
+        # TODO: Move to cryptic passage only map class..?
         if self.crypt and self.version == 7:
-            data = MapCrypt(self.data[pos:pos+self.sprite_size], (self.mapRevision*self.sprite_size) | 0x7474614d)
-            d = self.spritePacker.unpack(data)
-        else:
-            d = self.spritePacker.unpack(self.data[pos:pos+self.sprite_size])
+            data = MapCrypt(data, self.mapRevision * self.sector_size)
 
-        sprite = Sprite(d)
+        sector = Sector(**self.sectorPacker.unpack(data))
+        sector.length = self.sector_size
+        if sector.extra > 0:
+            pos += self.sector_size
+            sector.extraData = self.data[pos:pos + self.x_sector_size]
+            sector.length += self.x_sector_size
+        return sector
+
+    def GetWall(self, pos) -> Wall:
+        data = self.data[pos:pos + self.wall_size]
+
+        # TODO: Move to cryptic passage only map class..?
+        if self.crypt and self.version == 7:
+            data = MapCrypt(data, (self.mapRevision * self.sector_size) | 0x7474614d)
+
+        wall = Wall(**self.wallPacker.unpack(data))
+        wall.length = self.wall_size
+        if wall.extra > 0:
+            pos += self.wall_size
+            wall.extraData = self.data[pos:pos + self.x_wall_size]
+            wall.length += self.x_wall_size
+        return wall
+
+    def GetSprite(self, pos) -> Sprite:
+        data = self.data[pos:pos + self.sprite_size]
+
+        # TODO: Move to cryptic passage only map class..?
+        if self.crypt and self.version == 7:
+            data = MapCrypt(self.data[pos:pos + self.sprite_size], (self.mapRevision * self.sprite_size) | 0x7474614d)
+
+        sprite = Sprite(**self.spritePacker.unpack(data))
         sprite.length = self.sprite_size
         if sprite.extra > 0:
             pos += self.sprite_size
-            sprite.extraData = self.data[pos:pos+self.x_sprite_size]
+            sprite.extraData = self.data[pos:pos + self.x_sprite_size]
             sprite.length += self.x_sprite_size
         return sprite
 
-    def WriteSprite(self, sprite:Sprite, id, pos):
-        assert id >= 0
-        assert pos == len(self.data)
+    def CreateHeaderPacker(self):
+        self.headerPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                version='i',
+                startPos='iii',
+                startAngle='h',
+                startSect='h',
+            )
+        )
+
+    def CreateSectorPacker(self):
+        # keep AddSector up to date with this
+        self.sectorPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                wall='h',
+                wallnum='h',
+                ceilingz='i',
+                floorz='i',
+                ceilingstat='h',
+                floorstat='h',
+                ceilingpicnum='h',
+                ceilingheinum='h',
+                ceilingshade='b',
+                ceiling_palette='B',
+                ceiling_texcoords='BB',
+                floorpicnum='h',
+                floorheinum='h',
+                floorshade='b',
+                floor_palette='B',
+                floor_texcoords='BB',
+                visibility='B',
+                filler='B',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
+    def CreateWallPacker(self):
+        # keep AddWall up to date with this
+        self.wallPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='ii',
+                point2='h',
+                nextwall='h',
+                nextsector='h',
+                cstat='h',
+                picnum='h',
+                overpicnum='h',
+                shade='b',
+                palette='B',
+                texcoords='BBBB',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
+    def CreateSpritePacker(self):
+        # keep AddSprite up to date with this
+        self.spritePacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='iii',
+                cstat='h',
+                picnum='h',
+                shade='b',
+                palette='B',
+                clipdist='B',
+                filler='B',
+                texcoords='BBbb',
+                sectnum='h',
+                statnum='h',
+                angle='h',
+                owner='h',
+                velocity='hhh',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
+    def ReadHeaders(self) -> int:
+        self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_LENGTH]))
+        if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
+            warning('unexpected map version', self.version, self.name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
+        return self.HEADER_LENGTH
+
+    def WriteHeaders(self) -> int:
+
+        # TODO: Create header object
+        newdata = self.headerPacker.pack(
+            {
+                'version': self.version,
+                'startPos': self.startPos,
+                'startAngle': self.startAngle,
+                'startSect': self.startSect,
+            }
+        )
+        self.data.extend(newdata)
+        return len(newdata)
+
+    def ReadNumSectors(self, start) -> int:
+        stop = start + 2
+        (self.num_sectors,) = unpack('<H', self.data[start:stop])
+        return stop
+
+    def WriteNumSectors(self, start) -> int:
+        new_data = pack('<H', self.num_sectors)
+        self.data.extend(new_data)
+        return start + len(new_data)
+
+    def ReadNumWalls(self, start) -> int:
+        stop = start + 2
+        (self.num_walls, ) = unpack('<H', self.data[start:stop])
+        return stop
+
+    def WriteNumWalls(self, start) -> int:
+        new_data = pack('<H', self.num_walls)
+        self.data.extend(new_data)
+        return start + len(new_data)
+
+    def ReadNumSprites(self, start) -> int:
+        stop = start + 2
+        (self.num_sprites, ) = unpack('<H', self.data[start:stop])
+        return stop
+
+    def WriteNumSprites(self, pos) -> int:
+        new_data = pack('<H', self.num_sprites)
+        self.data.extend(new_data)
+        return pos + len(new_data)
+
+    def ReadSectors(self, pos) -> int:
+        for i in range(self.num_sectors):
+            sector = self.GetSector(pos)
+            self.AppendSector(sector)
+            pos += sector.length
+        return pos
+
+    def WriteSector(self, sector: Sector):
+        sector_dict = asdict(sector)
+        sector_dict.pop('length')
+        newdata = self.sectorPacker.pack(sector_dict)
+        if sector.extra > 0:
+            newdata += sector.extraData
+        self.data.extend(newdata)
+
+    def WriteSectors(self, pos) -> int:
+        for sector in self.sectors:
+            self.WriteSector(sector)
+            pos += sector.length
+        return pos
+
+    def ReadWalls(self, pos) -> int:
+        for i in range(self.num_walls):
+            wall = self.GetWall(pos)
+            self.AppendWall(wall)
+            pos += wall.length
+        return pos
+
+    def WriteWall(self, wall: Wall):
+        wall_dict = asdict(wall)
+        wall_dict.pop('length')
+        newdata = self.wallPacker.pack(wall_dict)
+        if wall.extra > 0:
+            newdata += wall.extraData
+        self.data.extend(newdata)
+
+    def WriteWalls(self, pos) -> int:
+        for wall in self.walls:
+            self.WriteWall(wall)
+            pos += wall.length
+        return pos
+
+    def ReadSprites(self, pos) -> int:
+        for i in range(self.num_sprites):
+            sprite = self.GetSprite(pos)
+            self.AppendSprite(sprite)
+            pos += sprite.length
+        return pos
+
+    def WriteSprite(self, sprite: Sprite):
         newdata = self.spritePacker.pack(sprite.__dict__)
+
+        # TODO: Move to cryptic passage only map class..?
         if self.crypt and self.version == 7:
             newdata = bytearray(newdata)
             newdata = MapCrypt(newdata, (self.mapRevision*self.sprite_size) | 0x7474614d)
-        self.data.extend(newdata)
+
         if sprite.extra > 0:
-            self.data.extend(sprite.extraData)
+            newdata.extend(sprite.extraData)
+        self.data.extend(newdata)
+
+    def WriteSprites(self, pos) -> int:
+        for sprite in self.sprites:
+            self.WriteSprite(sprite)
+            pos += sprite.length
+        return pos
+
+    def ReadData(self):
+        pos = self.ReadHeaders()
+        pos = self.ReadNumSectors(pos)
+        pos = self.ReadSectors(pos)
+        pos = self.ReadNumWalls(pos)
+        pos = self.ReadWalls(pos)
+        pos = self.ReadNumSprites(pos)
+        self.ReadSprites(pos)
+
+    def WriteData(self):
+        self.data = bytearray()
+        pos = self.WriteHeaders()
+        pos = self.WriteNumSectors(pos)
+        pos = self.WriteSectors(pos)
+        pos = self.WriteNumWalls(pos)
+        pos = self.WriteWalls(pos)
+        pos = self.WriteNumSprites(pos)
+        self.WriteSprites(pos)
 
     def GetSectorInfo(self, sector:int) -> Sector:
         if sector in self.sectorCache:
@@ -422,13 +697,16 @@ class MapFile:
 
         assert sector >= 0
         assert sector < len(self.sectors)
+
+        # TODO: Use sector class.
         wall = self.sectors[sector][0]
         numwalls = self.sectors[sector][1]
+
         walls = {}
         nearbySectors = set()
         shapes = [[]]
         for i in range(numwalls):
-            (x, y, nextwall, otherwall, nextsect) = self.walls[wall]
+            (x, y, nextwall, otherwall, nextsect) = self.walls[wall]    # TODO: Replace with wall class.
             nearbySectors.add(nextsect)
             point = (x, y)
             walls[wall] = point
@@ -459,21 +737,43 @@ class MapV6(MapFile):
 
     def ReadHeaders(self, data):
         super().ReadHeaders(data)
+
+        # TODO: This is an odd place to override these members, probably because
+        # they are set in the super class init, right before the data is read,
+        # so there's no better place to set them. Maybe push them up to class
+        # members
         self.sector_size = 37
         self.sprite_size = 43
 
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
-        self.spritePacker = FancyPacker('<', OrderedDict(
-            pos='iii', cstat='h', shade='b', palette='B', clipdist='B',
-            texcoords='BBbb', picnum='h', angle='h', velocity='hhh', owner='h',
-            sectnum='h', statnum='h', lowtag='h', hightag='h', extra='h')
+        self.spritePacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='iii',
+                cstat='h',
+                shade='b',
+                palette='B',
+                clipdist='B',
+                texcoords='BBbb',
+                picnum='h',
+                angle='h',
+                velocity='hhh',
+                owner='h',
+                sectnum='h',
+                statnum='h',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
         )
 
-    def ReadWalls(self) -> int:
-        pos = super().ReadWalls()
+    def ReadWalls(self, pos) -> int:
+        pos = super().ReadWalls(pos)
         for i in range(len(self.walls)):
             # v6 has otherwall and nextsect backwards
+
+            # TODO: I think this gets fixed by redefining the wall packer the other way...
             (x, y, nextwall, nextsect, otherwall) = self.walls[i]
             self.walls[i] = (x, y, nextwall, otherwall, nextsect)
         return pos
@@ -483,15 +783,36 @@ class BloodMap(MapFile):
 
     HEADER_LENGTH = 43
 
-    def ReadHeaders(self, data):
-        self.headerPacker = FancyPacker('<', OrderedDict(
-            sig='4s', version='h', startPos='iii', startAngle='h', startSect='h', pskybits='h', visibility='i',
-            songid='i', parallaxtype='c', mapRevision='i', numSects='H', num_walls='H', num_sprites='H')
+    def CreateHeaderPacker(self):
+        self.headerPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                sig='4s',
+                version='h',
+                startPos='iii',
+                startAngle='h',
+                startSect='h',
+                pskybits='h',
+                visibility='i',
+                songid='i',
+                parallaxtype='c',
+                mapRevision='i',
+                # numSects='H',
+                # num_walls='H',
+                # num_sprites='H',
+            )
         )
-        self.__dict__.update(self.headerPacker.unpack(data[:self.HEADER_LENGTH]))
+
+    def ReadHeaders(self):
+        # self.headerPacker = FancyPacker('<', OrderedDict(
+        #     sig='4s', version='h', startPos='iii', startAngle='h', startSect='h', pskybits='h', visibility='i',
+        #     songid='i', parallaxtype='c', mapRevision='i', numSects='H', num_walls='H', num_sprites='H')
+        # )
+        #self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_LENGTH]))
+        super().ReadHeaders()
 
         if self.songid != 0 and self.songid != 0x7474614d and self.songid != 0x4d617474:
-            header = data[:self.HEADER_LENGTH]
+            header = self.data[:self.HEADER_LENGTH]
             header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
             self.crypt = 1
             self.__dict__.update(self.headerPacker.unpack(header[:self.HEADER_LENGTH]))
@@ -502,7 +823,7 @@ class BloodMap(MapFile):
         if self.version == 7: # if (byte_1A76C8)
             self.header2Len = 128
             header2Start = self.HEADER_LENGTH
-            header2data = data[header2Start:header2Start + 128]
+            header2data = self.data[header2Start:header2Start + 128]
             if self.crypt:
                 header2data = MapCrypt(header2data, self.num_walls)
 
@@ -515,27 +836,32 @@ class BloodMap(MapFile):
             self.x_sprite_size = 56
             self.x_wall_size = 24
 
-        self.hash = data[-4:]
+        self.hash = self.data[-4:]
         self.sky_start = self.HEADER_LENGTH + self.header2Len
         self.sky_length = (1<<self.pskybits) * 2
         self.sectors_start = self.sky_start + self.sky_length
 
-    def WriteNumSprites(self):
+    def WriteNumSprites(self, pos):
         header = self.headerPacker.pack(self.__dict__)
         if self.crypt:
             header = bytearray(header)
             header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
         self.data[6:self.HEADER_LENGTH] = header[6:self.HEADER_LENGTH]
+        return pos
 
     def ReadData(self):
-        self.walls_start = self.ReadSectors()
-        self.sprites_start = self.ReadWalls()
-        self.sprites_end = self.ReadSprites()
+        pos = self.ReadHeaders()
+        pos = self.ReadNumSectors(pos)
+        pos = self.ReadNumWalls(pos)
+        pos = self.ReadNumSprites(pos)
+        pos = self.ReadSectors(pos)
+        pos = self.ReadWalls(pos)
+        self.ReadSprites(pos)
 
     def WriteSprites(self):
         super().WriteSprites()
         # TODO: write md4 hash?
-        crc:int = binascii.crc32(self.data)
+        crc: int = binascii.crc32(self.data)
         self.hash = pack('<I', crc)
         self.data.extend(self.hash)
 
@@ -564,6 +890,7 @@ def PointIsInShape(walls, p, intersects) -> int:
         j=i
         i+=1
     return intersects
+
 
 def MapCrypt(data:bytearray, key:int) -> bytearray:
     # reversible/symmetrical

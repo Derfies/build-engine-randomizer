@@ -20,6 +20,7 @@ def GetVersion() -> str:
 
 packLengthRegex = re.compile('^(.*?)(\d+)(\w)(.*?)$')
 class FancyPacker:
+
     def __init__(self, endianness: str, mappings: OrderedDict):
         self.format = endianness
         self.keys = {}
@@ -33,7 +34,6 @@ class FancyPacker:
                 self.keys[k] = len(v)
             self.total_len += self.keys[k]
 
-
     def unpack(self, data: bytes) -> dict:
         t = unpack(self.format, data)
         dict = {}
@@ -45,7 +45,6 @@ class FancyPacker:
                 continue
             dict[k] = list(t[i:i+L])
             i+=L
-
         return dict
 
     def pack(self, dict: dict) -> bytes:
