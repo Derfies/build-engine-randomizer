@@ -1,0 +1,19 @@
+[[package]]
+name = "typeguard"
+version = "2.13.3"
+description = "Run-time type checker for Python"
+category = "main"
+optional = false
+python-versions = ">=3.5.3"
+
+[package.extras]
+doc = ["sphinx-rtd-theme", "sphinx-autodoc-typehints (>=1.2.0)"]
+test = ["pytest", "typing-extensions", "mypy"]
+
+[metadata]
+lock-version = "1.1"
+python-versions = "^3.10"
+content-hash = "aa535f56fd03bace57aff85284b62f4a97294d3e2bb7672b748b9bdf943a9a84"
+
+[metadata.files]
+typeguard = []

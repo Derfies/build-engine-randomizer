@@ -4,6 +4,7 @@ from BuildLibs import games
 from pathlib import Path
 
 class CStat:
+
     def __init__(self, cstat):
         self.blocking = bool(cstat & 1)
         self.facing = cstat & 0x30
@@ -12,6 +13,7 @@ class CStat:
         self.invisible = bool(cstat & 0x8000)
 
 class Sector:
+
     def __init__(self, **kargs):
         self.__dict__ = dict(**kargs)
         self.nearbySectors:set
@@ -20,6 +22,7 @@ class Sector:
 
 
 class Sprite:
+
     def __init__(self, d):
         self.__dict__ = d
         self.pos:list
@@ -39,24 +42,31 @@ class Sprite:
 
 
 def LoadMap(gameName, name, data: bytearray) -> 'MapFile':
+    game_settings = games.GetGameMapSettings(gameName)
     # Blood has a signature at the front of map files
     if data[:4] == b'BLM\x1a':
-        return BloodMap(gameName, name, data)
+        return BloodMap(game_settings, name, data)
     else:
         (version,) = unpack('<i', data[:4])
         if version <= 6:
             # https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)#Version_6
-            return MapV6(gameName, name, data)
-        return MapFile(gameName, name, data)
+            return MapV6(game_settings, name, data)
+        return MapFile(game_settings, name, data)
 
 
 class MapFile:
-    # https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)
-    def __init__(self, gameName, name, data: bytearray):
+
+    """
+    https://moddingwiki.shikadi.net/wiki/MAP_Format_(Build)
+
+    """
+
+    HEADER_LENGTH = 22
+
+    def __init__(self, game_settings, name, data: bytearray):
         info('\n', name, len(data))
         self.name = name
-        self.game_name = gameName
-        self.gameSettings = games.GetGameMapSettings(gameName)
+        self.gameSettings = game_settings
         self.crypt = 0
 
         self.version = 0
@@ -67,8 +77,10 @@ class MapFile:
         self.x_sector_size = 0
         self.x_sprite_size = 0
         self.x_wall_size = 0
-
-        self.ReadHeaders(data)
+        self.sectors_start = self.HEADER_LENGTH
+        self.numSects = 0
+        if data:
+            self.ReadHeaders(data)
 
         if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
             warning('unexpected map version', self.version, name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
@@ -85,14 +97,16 @@ class MapFile:
         self.sectors = []
         self.walls = []
         self.sectorCache = {}
-        self.ReadData()
+        if data:
+            self.ReadData()
+
+    @property
+    def sprites(self):
+        return self.items + self.enemies + self.triggers + self.other_sprites
 
     def ReadHeaders(self, data):
-        self.numSects:int
         headerPacker = FancyPacker('<', OrderedDict(version='i', startPos='iii', startAngle='h', startSect='h', numSects='H'))
-        self.headerLen = 22
-        self.__dict__.update(headerPacker.unpack(data[:self.headerLen]))
-        self.sectors_start = self.headerLen
+        self.__dict__.update(headerPacker.unpack(data[:self.HEADER_LENGTH]))
 
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
@@ -104,10 +118,10 @@ class MapFile:
 
     def ReadData(self):
         pos = self.ReadSectors()
-        (self.num_walls,) = unpack('<H', self.data[pos:pos + 2])
+        self.num_walls, _ = unpack('<H', self.data[pos:pos + 2])
         self.walls_start = pos + 2
         pos = self.ReadWalls()
-        (self.num_sprites,) = unpack('<H', self.data[pos:pos + 2])
+        self.num_sprites, _ = unpack('<H', self.data[pos:pos + 2])
         self.sprites_start = pos + 2
         self.sprites_end = self.ReadSprites()
 
@@ -147,7 +161,6 @@ class MapFile:
             self.AppendSprite(sprite)
             pos += sprite.length
         return pos
-
 
     def Randomize(self, seed:int, settings:dict, spoilerlog):
         try:
@@ -207,7 +220,7 @@ class MapFile:
         for add in self.gameSettings.additions.get(self.name.lower(), []):
             self.AddSprite(rng, add)
 
-        self.WriteSprites()
+        self.WriteData()
 
         self.spoilerlog.ListSprites('item', self.items)
         self.spoilerlog.ListSprites('enemy', self.enemies)
@@ -334,7 +347,6 @@ class MapFile:
         spritetype = self.GetSpriteType(sprite)
         self.spoilerlog.AddSprite(spritetype, sprite)
 
-
     def AppendSprite(self, sprite:Sprite) -> None:
         cstat = CStat(sprite.cstat)
         if sprite.picnum in self.gameSettings.swappableItems:
@@ -361,19 +373,20 @@ class MapFile:
         else:
             return 'other'
 
-    def WriteNumSprites(self, num):
-        (self.data[self.sprites_start - 2], self.data[self.sprites_start - 1]) = pack('<H', num)
+    def WriteNumSprites(self):
+        self.data[self.sprites_start - 2], self.data[self.sprites_start - 1] = pack('<H', self.num_sprites)
 
     def WriteSprites(self):
-        sprites = self.items + self.enemies + self.triggers + self.other_sprites
-
-        self.WriteNumSprites(len(sprites))
-
         pos = self.sprites_start
-        self.data = self.data[:pos]
+        self.data = self.data[:pos]     # Kill all data up to this point
+        sprites = self.sprites
         for i in range(len(sprites)):
             self.WriteSprite(sprites[i], i, pos)
             pos += sprites[i].length
+
+    def WriteData(self):
+        self.WriteNumSprites()
+        self.WriteSprites()
 
     def GetSprite(self, id, pos) -> Sprite:
         assert id >= 0
@@ -402,7 +415,6 @@ class MapFile:
         self.data.extend(newdata)
         if sprite.extra > 0:
             self.data.extend(sprite.extraData)
-
 
     def GetSectorInfo(self, sector:int) -> Sector:
         if sector in self.sectorCache:
@@ -443,11 +455,8 @@ class MapFile:
         return None
 
 
-    def GetData(self) -> bytearray:
-        return self.data
-
-
 class MapV6(MapFile):
+
     def ReadHeaders(self, data):
         super().ReadHeaders(data)
         self.sector_size = 37
@@ -471,26 +480,28 @@ class MapV6(MapFile):
 
 
 class BloodMap(MapFile):
+
+    HEADER_LENGTH = 43
+
     def ReadHeaders(self, data):
         self.headerPacker = FancyPacker('<', OrderedDict(
             sig='4s', version='h', startPos='iii', startAngle='h', startSect='h', pskybits='h', visibility='i',
             songid='i', parallaxtype='c', mapRevision='i', numSects='H', num_walls='H', num_sprites='H')
         )
-        self.headerLen = 43
-        self.__dict__.update(self.headerPacker.unpack(data[:self.headerLen]))
+        self.__dict__.update(self.headerPacker.unpack(data[:self.HEADER_LENGTH]))
 
         if self.songid != 0 and self.songid != 0x7474614d and self.songid != 0x4d617474:
-            header = data[:self.headerLen]
-            header[6:self.headerLen] = MapCrypt(header[6:self.headerLen], 0x7474614d)
+            header = data[:self.HEADER_LENGTH]
+            header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
             self.crypt = 1
-            self.__dict__.update(self.headerPacker.unpack(header[:self.headerLen]))
+            self.__dict__.update(self.headerPacker.unpack(header[:self.HEADER_LENGTH]))
 
         self.exactVersion = self.version
         self.version = self.exactVersion >> 8
 
         if self.version == 7: # if (byte_1A76C8)
             self.header2Len = 128
-            header2Start = self.headerLen
+            header2Start = self.HEADER_LENGTH
             header2data = data[header2Start:header2Start + 128]
             if self.crypt:
                 header2data = MapCrypt(header2data, self.num_walls)
@@ -505,17 +516,16 @@ class BloodMap(MapFile):
             self.x_wall_size = 24
 
         self.hash = data[-4:]
-        self.sky_start = self.headerLen + self.header2Len
+        self.sky_start = self.HEADER_LENGTH + self.header2Len
         self.sky_length = (1<<self.pskybits) * 2
         self.sectors_start = self.sky_start + self.sky_length
 
-    def WriteNumSprites(self, num):
-        self.num_sprites = num
+    def WriteNumSprites(self):
         header = self.headerPacker.pack(self.__dict__)
         if self.crypt:
             header = bytearray(header)
-            header[6:self.headerLen] = MapCrypt(header[6:self.headerLen], 0x7474614d)
-        self.data[6:self.headerLen] = header[6:self.headerLen]
+            header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
+        self.data[6:self.HEADER_LENGTH] = header[6:self.HEADER_LENGTH]
 
     def ReadData(self):
         self.walls_start = self.ReadSectors()

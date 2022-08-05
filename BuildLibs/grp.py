@@ -219,10 +219,9 @@ class GrpBase(metaclass=abc.ABCMeta):
             out = Path(basepath, writename)
             out.parent.mkdir(parents=True, exist_ok=True)
             with open(out, 'wb') as f:
-                data = map.GetData()
-                size = locale.format_string('%d bytes', len(data), grouping=True)
+                size = locale.format_string('%d bytes', len(map.data), grouping=True)
                 spoilerlog.write(str(mapname) + ' writing to ' + str(out) + ', is ' + size)
-                f.write(map.GetData())
+                f.write(map.data)
 
         spoilerlog.write('\n')
         spoilerlog.write(repr(self.conSettings))
