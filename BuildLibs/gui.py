@@ -1,12 +1,12 @@
-from random import Random
 from tkinter import *
 from tkinter import filedialog
 from tkinter import font
 from tkinter import messagebox
 import webbrowser
 from idlelib.tooltip import Hovertip
-import traceback
+from BuildLibs import GetVersion
 from BuildLibs.grp import *
+
 
 # from https://stackoverflow.com/a/68701602
 class ScrollableFrame:
@@ -206,7 +206,7 @@ class RandoSettings:
         self.root = Tk()
         self.root.protocol("WM_DELETE_WINDOW",self.closeWindow)
         self.root.bind("<Configure>",self.resize)
-        self.root.title('Build Engine Randomizer '+GetVersion()+' Settings')
+        self.root.title('Build Engine Randomizer ' + GetVersion()+' Settings')
         self.root.geometry(str(self.width)+"x"+str(self.height))
 
         scroll = ScrollableFrame(self.root, width=self.width, height=self.height, mousescroll=1)
