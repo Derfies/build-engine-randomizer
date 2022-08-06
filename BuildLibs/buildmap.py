@@ -1,3 +1,4 @@
+import binascii
 import copy
 import random
 import struct
@@ -106,7 +107,13 @@ class MapFile:
 
     """
 
-    HEADER_LENGTH = 20
+    HEADER_SIZE = 20
+    SECTOR_SIZE = 40
+    WALL_SIZE = 32
+    SPRITE_SIZE = 44
+    X_SECTOR_SIZE = 0
+    X_WALL_SIZE = 0
+    X_SPRITE_SIZE = 0
 
     def __init__(self, gameSettings, name, data: bytearray = None):
         self.gameSettings = gameSettings
@@ -124,24 +131,17 @@ class MapFile:
 
         self.crypt = 0
 
-        self.sector_size = 40
-        self.wall_size = 32
-        self.sprite_size = 44
-
         self.header2Len = 0
-        self.x_sector_size = 0
-        self.x_sprite_size = 0
-        self.x_wall_size = 0
 
         self.CreateHeaderPacker()
         self.CreateSectorPacker()
         self.CreateWallPacker()
         self.CreateSpritePacker()
 
-        assert self.HEADER_LENGTH == self.headerPacker.calcsize()
-        assert self.sector_size == self.sectorPacker.calcsize()
-        assert self.wall_size == self.wallPacker.calcsize()
-        assert self.sprite_size == self.spritePacker.calcsize()
+        assert self.HEADER_SIZE == self.headerPacker.calcsize()
+        assert self.SECTOR_SIZE == self.sectorPacker.calcsize()
+        assert self.WALL_SIZE == self.wallPacker.calcsize()
+        assert self.SPRITE_SIZE == self.spritePacker.calcsize()
 
         self.sectors = []
         self.walls = []
@@ -352,7 +352,7 @@ class MapFile:
             'lowtag': 0,
             'hightag': 0,
             'extra': -1,
-            'length': self.sprite_size,
+            'length': self.SPRITE_SIZE,
             **add.copy()
         }
         del add['choices']
@@ -387,7 +387,7 @@ class MapFile:
             return 'item'
         elif not self.gameSettings.swappableItems and self.IsItem(sprite, cstat):
             return 'item'
-        elif sprite.picnum in self.gameSettings.swappableEnemies and cstat.invisible==False:
+        elif sprite.picnum in self.gameSettings.swappableEnemies and not cstat.invisible:
             return 'enemy'
         elif sprite.picnum in self.gameSettings.triggers:
             return 'trigger'
@@ -395,47 +395,47 @@ class MapFile:
             return 'other'
 
     def GetSector(self, pos) -> Sector:
-        data = self.data[pos:pos + self.sector_size]
+        data = self.data[pos:pos + self.SECTOR_SIZE]
 
         # TODO: Move to cryptic passage only map class..?
         if self.crypt and self.version == 7:
-            data = MapCrypt(data, self.mapRevision * self.sector_size)
+            data = MapCrypt(data, self.mapRevision * self.SECTOR_SIZE)
 
         sector = Sector(**self.sectorPacker.unpack(data))
-        sector.length = self.sector_size
+        sector.length = self.SECTOR_SIZE
         if sector.extra > 0:
-            pos += self.sector_size
-            sector.extraData = self.data[pos:pos + self.x_sector_size]
-            sector.length += self.x_sector_size
+            pos += self.SECTOR_SIZE
+            sector.extraData = self.data[pos:pos + self.X_SECTOR_SIZE]
+            sector.length += self.X_SECTOR_SIZE
         return sector
 
     def GetWall(self, pos) -> Wall:
-        data = self.data[pos:pos + self.wall_size]
+        data = self.data[pos:pos + self.WALL_SIZE]
 
         # TODO: Move to cryptic passage only map class..?
         if self.crypt and self.version == 7:
-            data = MapCrypt(data, (self.mapRevision * self.sector_size) | 0x7474614d)
+            data = MapCrypt(data, (self.mapRevision * self.SECTOR_SIZE) | 0x7474614d)
 
         wall = Wall(**self.wallPacker.unpack(data))
-        wall.length = self.wall_size
+        wall.length = self.WALL_SIZE
         if wall.extra > 0:
-            pos += self.wall_size
-            wall.extraData = self.data[pos:pos + self.x_wall_size]
-            wall.length += self.x_wall_size
+            pos += self.WALL_SIZE
+            wall.extraData = self.data[pos:pos + self.X_WALL_SIZE]
+            wall.length += self.X_WALL_SIZE
         return wall
 
     def GetSprite(self, pos) -> Sprite:
-        data = self.data[pos:pos + self.sprite_size]
+        data = self.data[pos:pos + self.SPRITE_SIZE]
 
         # TODO: Move to cryptic passage only map class..?
         if self.crypt and self.version == 7:
-            data = MapCrypt(self.data[pos:pos + self.sprite_size], (self.mapRevision * self.sprite_size) | 0x7474614d)
+            data = MapCrypt(self.data[pos:pos + self.SPRITE_SIZE], (self.mapRevision * self.SPRITE_SIZE) | 0x7474614d)
 
-        sprite = Sprite(length=self.sprite_size, **self.spritePacker.unpack(data))
+        sprite = Sprite(length=self.SPRITE_SIZE, **self.spritePacker.unpack(data))
         if sprite.extra > 0:
-            pos += self.sprite_size
-            sprite.extraData = self.data[pos:pos + self.x_sprite_size]
-            sprite.length += self.x_sprite_size
+            pos += self.SPRITE_SIZE
+            sprite.extraData = self.data[pos:pos + self.X_SPRITE_SIZE]
+            sprite.length += self.X_SPRITE_SIZE
         return sprite
 
     def CreateHeaderPacker(self):
@@ -524,10 +524,10 @@ class MapFile:
         )
 
     def ReadHeaders(self) -> int:
-        self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_LENGTH]))
+        self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_SIZE]))
         if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
             warning('unexpected map version', self.version, self.name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
-        return self.HEADER_LENGTH
+        return self.HEADER_SIZE
 
     def WriteHeaders(self) -> int:
 
@@ -622,11 +622,10 @@ class MapFile:
         newdata = self.spritePacker.pack(sprite.__dict__)
 
         # TODO: Move to cryptic passage only map class..?
+        newdata = bytearray(newdata)
         if self.crypt and self.version == 7:
-            newdata = bytearray(newdata)
-            newdata = MapCrypt(newdata, (self.mapRevision*self.sprite_size) | 0x7474614d)
-        elif sprite.extra > 0:
-            newdata = bytearray(newdata)
+            newdata = MapCrypt(newdata, (self.mapRevision * self.SPRITE_SIZE) | 0x7474614d)
+
         if sprite.extra > 0:
             newdata.extend(sprite.extraData)
         self.data.extend(newdata)
@@ -698,19 +697,33 @@ class MapFile:
 
 class MapV6(MapFile):
 
-    def ReadHeaders(self, data) -> int:
-        ret = super().ReadHeaders(data)
+    SECTOR_SIZE = 37
+    SPRITE_SIZE = 43
 
-        # TODO: This is an odd place to override these members, probably because
-        # they are set in the super class init, right before the data is read,
-        # so there's no better place to set them. Maybe push them up to class
-        # members
-        self.sector_size = 37
-        return ret
+    def CreateWallPacker(self):
+        # keep AddWall up to date with this
+        # v6 has otherwall and nextsect backwards
+        self.wallPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='ii',
+                nextwall='h',
+                nextsector='h',
+                point2='h',
+                cstat='h',
+                picnum='h',
+                overpicnum='h',
+                shade='b',
+                palette='B',
+                texcoords='BBBB',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
 
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
-        self.sprite_size = 43
         self.spritePacker = FancyPacker(
             '<',
             OrderedDict(
@@ -732,20 +745,10 @@ class MapV6(MapFile):
             )
         )
 
-    def ReadWalls(self, pos) -> int:
-        pos = super().ReadWalls(pos)
-        for i in range(len(self.walls)):
-            # v6 has otherwall and nextsect backwards
-
-            # TODO: I think this gets fixed by redefining the wall packer the other way...
-            (x, y, nextwall, nextsect, otherwall) = self.walls[i]
-            self.walls[i] = (x, y, nextwall, otherwall, nextsect)
-        return pos
-
 
 class BloodMap(MapFile):
 
-    HEADER_LENGTH = 43
+    HEADER_SIZE = 43
 
     def CreateHeaderPacker(self):
         self.headerPacker = FancyPacker(
@@ -768,11 +771,6 @@ class BloodMap(MapFile):
         )
 
     def ReadHeaders(self) -> int:
-        # self.headerPacker = FancyPacker('<', OrderedDict(
-        #     sig='4s', version='h', startPos='iii', startAngle='h', startSect='h', pskybits='h', visibility='i',
-        #     songid='i', parallaxtype='c', mapRevision='i', numSects='H', num_walls='H', num_sprites='H')
-        # )
-        #self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_LENGTH]))
         super().ReadHeaders()
 
         if self.songid != 0 and self.songid != 0x7474614d and self.songid != 0x4d617474:
@@ -791,18 +789,18 @@ class BloodMap(MapFile):
             if self.crypt:
                 header2data = MapCrypt(header2data, self.num_walls)
 
-            header2Packer = FancyPacker('<', OrderedDict(x_sprite_size='i', x_wall_size='i', x_sector_size='i'))
+            header2Packer = FancyPacker('<', OrderedDict(X_SPRITE_SIZE='i', X_WALL_SIZE='i', X_SECTOR_SIZE='i'))
             header2 = header2Packer.unpack(header2data[64:76]) # skip the 64 bytes starting padding
             self.__dict__.update(header2)
         else:
             self.header2Len = 0
-            self.x_sector_size = 60
-            self.x_sprite_size = 56
-            self.x_wall_size = 24
+            self.X_SECTOR_SIZE = 60
+            self.X_SPRITE_SIZE = 56
+            self.X_WALL_SIZE = 24
 
         self.hash = self.data[-4:]
         self.sky_start = self.HEADER_LENGTH + self.header2Len
-        self.sky_length = (1<<self.pskybits) * 2
+        self.sky_length = (1 << self.pskybits) * 2
         self.sectors_start = self.sky_start + self.sky_length
         return self.sectors_start
 
@@ -827,7 +825,7 @@ class BloodMap(MapFile):
         super().WriteSprites()
         # TODO: write md4 hash?
         crc: int = binascii.crc32(self.data)
-        self.hash = pack('<I', crc)
+        self.hash = struct.pack('<I', crc)
         self.data.extend(self.hash)
 
 
