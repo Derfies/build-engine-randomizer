@@ -2,6 +2,7 @@ import abc
 import glob
 import locale
 import os
+import re
 import shutil
 import traceback
 from datetime import datetime
