@@ -45,6 +45,12 @@ class Sector:
         self.extra: int = kwargs.get('extra', -1)
         self.length: int = kwargs.get('length', 0)
 
+        # TODO: texcoords
+        self.ceilingxpanning: int = kwargs.get('ceilingxpanning', 0)
+        self.floorxpanning: int = kwargs.get('floorxpanning', 0)
+        self.ceilingypanning: int = kwargs.get('ceilingypanning', 0)
+        self.floorypanning: int = kwargs.get('floorypanning', 0)
+
         self.walls: Union[list, None] = kwargs.get('walls', None)
         self.nearbySectors: Union[set, None] = kwargs.get('nearbySectors', None)
         self.shapes: Union[list, None] = kwargs.get('shapes', None)
@@ -705,6 +711,8 @@ class MapV6(MapFile):
                 wallnum='h',
                 ceilingpicnum='h',
                 floorpicnum='h',
+                ceilingheinum='h',
+                floorheinum='h',
                 ceilingz='i',
                 floorz='i',
                 ceilingshade='b',
