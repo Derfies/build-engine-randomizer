@@ -534,8 +534,6 @@ class MapFile:
 
     def ReadHeaders(self) -> int:
         self.__dict__.update(self.headerPacker.unpack(self.data[:self.HEADER_SIZE]))
-        if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
-            warning('unexpected map version', self.version, self.name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
         return self.HEADER_SIZE
 
     def WriteHeaders(self) -> int:
@@ -640,6 +638,8 @@ class MapFile:
 
     def ReadData(self):
         pos: int = self.ReadHeaders()
+        if self.version < self.gameSettings.minMapVersion or self.version > self.gameSettings.maxMapVersion:
+            warning('unexpected map version', self.version, self.name, self.gameSettings.minMapVersion, self.gameSettings.maxMapVersion)
         pos = self.ReadNumSectors(pos)
         pos = self.ReadSectors(pos)
         pos = self.ReadNumWalls(pos)
