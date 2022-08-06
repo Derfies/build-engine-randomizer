@@ -696,6 +696,55 @@ class MapV6(MapFile):
     SECTOR_SIZE = 37
     SPRITE_SIZE = 43
 
+    def CreateSectorPacker(self):
+        # keep AddSector up to date with this
+        self.sectorPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                wall='h',
+                wallnum='h',
+                ceilingpicnum='h',
+                floorpicnum='h',
+                ceilingz='i',
+                floorz='i',
+                ceilingshade='b',
+                floorshade='b',
+                ceilingxpanning='B',
+                floorxpanning='B',
+                ceilingypanning='B',
+                floorypanning='B',
+                ceilingstat='B',
+                floorstat='B',
+                ceiling_palette='B',
+                floor_palette='B',
+                visibility='B',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
+    def CreateWallPacker(self):
+        # keep AddWall up to date with this
+        self.wallPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='ii',
+                point2='h',
+                nextsector='h',
+                nextwall='h',
+                picnum='h',
+                overpicnum='h',
+                shade='b',
+                palette='B',
+                cstat='h',
+                texcoords='BBBB',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
         self.spritePacker = FancyPacker(
@@ -713,27 +762,6 @@ class MapV6(MapFile):
                 owner='h',
                 sectnum='h',
                 statnum='h',
-                lowtag='h',
-                hightag='h',
-                extra='h',
-            )
-        )
-
-    def CreateWallPacker(self):
-        # keep AddWall up to date with this
-        self.wallPacker = FancyPacker(
-            '<',
-            OrderedDict(
-                pos='ii',
-                point2='h',
-                nextsector='h',
-                nextwall='h',
-                cstat='h',
-                picnum='h',
-                overpicnum='h',
-                shade='b',
-                palette='B',
-                texcoords='BBBB',
                 lowtag='h',
                 hightag='h',
                 extra='h',
