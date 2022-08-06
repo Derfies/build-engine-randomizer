@@ -551,7 +551,7 @@ class MapFile:
         return stop
 
     def WriteNumSectors(self, start) -> int:
-        new_data = struct.pack('<H', self.num_sectors)
+        new_data = struct.pack('<H', len(self.sectors))
         self.data.extend(new_data)
         return start + len(new_data)
 
@@ -561,7 +561,7 @@ class MapFile:
         return stop
 
     def WriteNumWalls(self, start) -> int:
-        new_data = struct.pack('<H', self.num_walls)
+        new_data = struct.pack('<H', len(self.walls))
         self.data.extend(new_data)
         return start + len(new_data)
 
@@ -571,7 +571,7 @@ class MapFile:
         return stop
 
     def WriteNumSprites(self, pos) -> int:
-        new_data = struct.pack('<H', self.num_sprites)
+        new_data = struct.pack('<H', len(self.sprites))
         self.data.extend(new_data)
         return pos + len(new_data)
 
@@ -675,7 +675,7 @@ class MapFile:
             nearbySectors.add(w.nextsector)
             walls[wall] = w.pos
             shapes[-1].append(w.pos)
-            if w.nextwall in walls:
+            if w.point2 in walls:
                 shapes.append([])
             wall += 1
 
