@@ -9,7 +9,7 @@ from pathlib import Path
 from typeguard import typechecked, importhook
 from unittest import case
 
-profiling = False
+profiling = 0
 if not profiling:
     importhook.install_import_hook('BuildLibs')
 from BuildLibs import buildmap, crc32, games, trace, setVerbose

@@ -153,6 +153,9 @@ class MapFile:
 
         if data is not None:
             self.ReadData()
+            assert len(self.sectors) > 0
+            assert len(self.walls) > 0
+            assert len(self.sprites) > 0
 
     def __str__(self):
         lines = []
@@ -532,14 +535,7 @@ class MapFile:
     def WriteHeaders(self) -> int:
 
         # TODO: Create header object
-        newdata = self.headerPacker.pack(
-            {
-                'version': self.version,
-                'startPos': self.startPos,
-                'startAngle': self.startAngle,
-                'startSect': self.startSect,
-            }
-        )
+        newdata = self.headerPacker.pack(self.__dict__)
         self.data.extend(newdata)
         return len(newdata)
 
@@ -700,28 +696,6 @@ class MapV6(MapFile):
     SECTOR_SIZE = 37
     SPRITE_SIZE = 43
 
-    def CreateWallPacker(self):
-        # keep AddWall up to date with this
-        # v6 has otherwall and nextsect backwards
-        self.wallPacker = FancyPacker(
-            '<',
-            OrderedDict(
-                pos='ii',
-                nextwall='h',
-                nextsector='h',
-                point2='h',
-                cstat='h',
-                picnum='h',
-                overpicnum='h',
-                shade='b',
-                palette='B',
-                texcoords='BBBB',
-                lowtag='h',
-                hightag='h',
-                extra='h',
-            )
-        )
-
     def CreateSpritePacker(self):
         # keep AddSprite up to date with this
         self.spritePacker = FancyPacker(
@@ -739,6 +713,27 @@ class MapV6(MapFile):
                 owner='h',
                 sectnum='h',
                 statnum='h',
+                lowtag='h',
+                hightag='h',
+                extra='h',
+            )
+        )
+
+    def CreateWallPacker(self):
+        # keep AddWall up to date with this
+        self.wallPacker = FancyPacker(
+            '<',
+            OrderedDict(
+                pos='ii',
+                point2='h',
+                nextsector='h',
+                nextwall='h',
+                cstat='h',
+                picnum='h',
+                overpicnum='h',
+                shade='b',
+                palette='B',
+                texcoords='BBBB',
                 lowtag='h',
                 hightag='h',
                 extra='h',
@@ -764,7 +759,7 @@ class BloodMap(MapFile):
                 songid='i',
                 parallaxtype='c',
                 mapRevision='i',
-                numSects='H',
+                num_sectors='H',
                 num_walls='H',
                 num_sprites='H',
             )
@@ -774,17 +769,17 @@ class BloodMap(MapFile):
         super().ReadHeaders()
 
         if self.songid != 0 and self.songid != 0x7474614d and self.songid != 0x4d617474:
-            header = self.data[:self.HEADER_LENGTH]
-            header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
+            header = self.data[:self.HEADER_SIZE]
+            header[6:self.HEADER_SIZE] = MapCrypt(header[6:self.HEADER_SIZE], 0x7474614d)
             self.crypt = 1
-            self.__dict__.update(self.headerPacker.unpack(header[:self.HEADER_LENGTH]))
+            self.__dict__.update(self.headerPacker.unpack(header[:self.HEADER_SIZE]))
 
         self.exactVersion = self.version
         self.version = self.exactVersion >> 8
 
         if self.version == 7: # if (byte_1A76C8)
             self.header2Len = 128
-            header2Start = self.HEADER_LENGTH
+            header2Start = self.HEADER_SIZE
             header2data = self.data[header2Start:header2Start + 128]
             if self.crypt:
                 header2data = MapCrypt(header2data, self.num_walls)
@@ -799,7 +794,7 @@ class BloodMap(MapFile):
             self.X_WALL_SIZE = 24
 
         self.hash = self.data[-4:]
-        self.sky_start = self.HEADER_LENGTH + self.header2Len
+        self.sky_start = self.HEADER_SIZE + self.header2Len
         self.sky_length = (1 << self.pskybits) * 2
         self.sectors_start = self.sky_start + self.sky_length
         return self.sectors_start
@@ -808,22 +803,21 @@ class BloodMap(MapFile):
         header = self.headerPacker.pack(self.__dict__)
         if self.crypt:
             header = bytearray(header)
-            header[6:self.HEADER_LENGTH] = MapCrypt(header[6:self.HEADER_LENGTH], 0x7474614d)
-        self.data[6:self.HEADER_LENGTH] = header[6:self.HEADER_LENGTH]
+            header[6:self.HEADER_SIZE] = MapCrypt(header[6:self.HEADER_SIZE], 0x7474614d)
+        self.data[6:self.HEADER_SIZE] = header[6:self.HEADER_SIZE]
         return pos
 
     def ReadData(self):
         pos: int = self.ReadHeaders()
-        pos = self.ReadNumSectors(pos)
-        pos = self.ReadNumWalls(pos)
-        pos = self.ReadNumSprites(pos)
+        #pos = self.ReadNumSectors(pos)
+        #pos = self.ReadNumWalls(pos)
+        #pos = self.ReadNumSprites(pos)
         pos = self.ReadSectors(pos)
         pos = self.ReadWalls(pos)
         self.ReadSprites(pos)
 
-    def WriteSprites(self):
-        super().WriteSprites()
-        # TODO: write md4 hash?
+    def WriteSprites(self, pos):
+        super().WriteSprites(pos)
         crc: int = binascii.crc32(self.data)
         self.hash = struct.pack('<I', crc)
         self.data.extend(self.hash)
